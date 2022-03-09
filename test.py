@@ -12,9 +12,10 @@ from PIL import Image
 from data import VOCAnnotationTransform, VOCDetection, BaseTransform, VOC_CLASSES
 import torch.utils.data as data
 from ssd import build_ssd
+import cv2
 
 parser = argparse.ArgumentParser(description='Single Shot MultiBox Detection')
-parser.add_argument('--trained_model', default='weights/ssd_300_VOC0712.pth',
+parser.add_argument('--trained_model', default='weights/ssd300_COCO_85000.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--save_folder', default='eval/', type=str,
                     help='Dir to save results')
@@ -39,10 +40,10 @@ def test_net(save_folder, net, cuda, testset, transform, thresh):
     # dump predictions and assoc. ground truth to text file for now
     filename = save_folder+'test1.txt'
     num_images = len(testset)
-    for i in range(num_images):
-        print('Testing image {:d}/{:d}....'.format(i+1, num_images))
-        img = testset.pull_image(i)
-        img_id, annotation = testset.pull_anno(i)
+    for id in range(num_images):
+        print('Testing image {:d}/{:d}....'.format(id+1, num_images))
+        img = testset.pull_image(id)
+        img_id, annotation = testset.pull_anno(id)
         x = torch.from_numpy(transform(img)[0]).permute(2, 0, 1)
         x = Variable(x.unsqueeze(0))
 
@@ -74,6 +75,12 @@ def test_net(save_folder, net, cuda, testset, transform, thresh):
                     f.write(str(pred_num)+' label: '+label_name+' score: ' +
                             str(score) + ' '+' || '.join(str(c) for c in coords) + '\n')
                 j += 1
+                cv2.rectangle(img, (int(pt[0]), int(pt[1])), (int(pt[2]), int(pt[3])), (255, 255, 0), 2, 8)
+                cv2.putText(img, label_name, (int(pt[0]), int(pt[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+
+        img_save_name = save_folder + str(id) + "img.jpg"
+        img_save_name = os.path.join(os.getcwd(), img_save_name)
+        cv2.imwrite(img_save_name, img)
 
 
 def test_voc():

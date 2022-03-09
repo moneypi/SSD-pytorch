@@ -14,6 +14,7 @@ import torch.nn.init as init
 import torch.utils.data as data
 import numpy as np
 import argparse
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 def str2bool(v):
@@ -25,11 +26,11 @@ parser = argparse.ArgumentParser(
 train_set = parser.add_mutually_exclusive_group()
 parser.add_argument('--dataset', default='VOC', choices=['VOC', 'COCO'],
                     type=str, help='VOC or COCO')
-parser.add_argument('--dataset_root', default='data/VOCdevkit',
+parser.add_argument('--dataset_root', default='../VOCdevkit',
                     help='Dataset root directory path')
 parser.add_argument('--basenet', default='vgg16_reducedfc.pth',
                     help='Pretrained base model')
-parser.add_argument('--batch_size', default=32, type=int,
+parser.add_argument('--batch_size', default=16, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', default=None, type=str,
                     help='Checkpoint state_dict file to resume training from')
@@ -39,7 +40,7 @@ parser.add_argument('--num_workers', default=4, type=int,
                     help='Number of workers used in dataloading')
 parser.add_argument('--cuda', default=True, type=str2bool,
                     help='Use CUDA to train model')
-parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float,
+parser.add_argument('--lr', '--learning-rate', default=1e-4, type=float,
                     help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float,
                     help='Momentum value for optim')
@@ -54,15 +55,15 @@ parser.add_argument('--save_folder', default='weights/',
 args = parser.parse_args()
 
 
-if torch.cuda.is_available():
-    if args.cuda:
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
-    if not args.cuda:
-        print("WARNING: It looks like you have a CUDA device, but aren't " +
-              "using CUDA.\nRun with --cuda for optimal training speed.")
-        torch.set_default_tensor_type('torch.FloatTensor')
-else:
-    torch.set_default_tensor_type('torch.FloatTensor')
+# if torch.cuda.is_available():
+#     if args.cuda:
+#         torch.set_default_tensor_type('torch.cuda.FloatTensor')
+#     if not args.cuda:
+#         print("WARNING: It looks like you have a CUDA device, but aren't " +
+#               "using CUDA.\nRun with --cuda for optimal training speed.")
+#         torch.set_default_tensor_type('torch.FloatTensor')
+# else:
+#     torch.set_default_tensor_type('torch.FloatTensor')
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
@@ -107,6 +108,7 @@ def train():
 
     optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum,
                           weight_decay=args.weight_decay)
+    scheduler = ReduceLROnPlateau(optimizer=optimizer, mode="min", factor=0.9, patience=1000)
     criterion = MultiBoxLoss(cfg['num_classes'], 0.5, True, 0, True, 3, 0.5,
                              False, args.cuda)
 
@@ -146,9 +148,9 @@ def train():
             conf_loss = 0
             epoch += 1
 
-        if iteration in cfg['lr_steps']:
-            step_index += 1
-            adjust_learning_rate(optimizer, args.gamma, step_index)
+        # if iteration in cfg['lr_steps']:
+        #     step_index += 1
+        #     adjust_learning_rate(optimizer, args.gamma, step_index)
 
         # load train data
         #images, targets = next(batch_iterator)
@@ -174,13 +176,15 @@ def train():
         loss = loss_l + loss_c
         loss.backward()
         optimizer.step()
+        scheduler.step(loss)
         t1 = time.time()
-        loc_loss += loss_l.data[0]
-        conf_loss += loss_c.data[0]
+        loc_loss += loss_l.item()
+        conf_loss += loss_c.item()
 
         if iteration % 10 == 0:
             print('timer: %.4f sec.' % (t1 - t0))
-            print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
+            print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.item()) + \
+                ' || lr: ' + str(optimizer.param_groups[0]['lr']), end=' ')
 
         if args.visdom:
             update_vis_plot(iteration, loss_l.data[0], loss_c.data[0],
